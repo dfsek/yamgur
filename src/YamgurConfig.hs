@@ -42,7 +42,8 @@ data OIDCConfig = OIDCConfig
   { oidc_secret :: Text,
     oidc_client_id :: Text,
     oidc_token_url :: URIRef Absolute,
-    oidc_auth_url :: URIRef Absolute
+    oidc_auth_url :: URIRef Absolute,
+    oidc_user_info :: URIRef Absolute
   }
   deriving (Generic, FromJSON)
 

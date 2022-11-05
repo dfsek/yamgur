@@ -30,7 +30,7 @@ oidcAuth widget config =
         pluginName
         manager
         token
-        "https://keycloak.dfsek.com/realms/dfsek.com/protocol/openid-connect/userinfo"
+        $ oidc_user_info config
     print userResponse
     print userId
     pure
@@ -44,7 +44,7 @@ oidcAuth widget config =
       OAuth2
         { oauth2ClientId = oidc_client_id config,
           oauth2ClientSecret = Just $ oidc_secret config,
-          oauth2AuthorizeEndpoint = "https://keycloak.dfsek.com/realms/dfsek.com/protocol/openid-connect/auth",
-          oauth2TokenEndpoint = "https://keycloak.dfsek.com/realms/dfsek.com/protocol/openid-connect/token",
+          oauth2AuthorizeEndpoint = oidc_auth_url config,
+          oauth2TokenEndpoint = oidc_token_url config,
           oauth2RedirectUri = Nothing
         }
