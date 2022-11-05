@@ -107,7 +107,9 @@ getHomeR = do
             <a href="https://www.haskell.org/">Haskell
             and uses the 
             <a href="https://www.yesodweb.com/">Yesod
-            web framework.
+            web framework. You can find the source code 
+            <a href="https://github.com/dfsek/yamgur">Here</a>. 
+            Enjoy!
           $maybe un <- user
             <p>Logged in as #{un}
             <p>
