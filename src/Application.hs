@@ -125,7 +125,7 @@ postUploadR = do
             liftIO $ do
               createDirectoryIfMissing True $ content_directory (config yamgur) </> show flake
               fileMove file path
-            liftIO $ putStrLn $ "Saved image as " <> path
+            liftIO $ putStrLn $ "Saved image as " <> unpack (host (config yamgur)) <> "/" <> path
             setMessage "Image saved"
             redirect HomeR
         _ -> do
