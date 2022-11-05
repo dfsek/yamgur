@@ -11,7 +11,7 @@
 
 module Application where
 
-import ClassyPrelude.Yesod (newManager, Static, UTCTime, getCurrentTime, unpack, (</>))
+import ClassyPrelude.Yesod (newManager, Static, UTCTime, getCurrentTime, unpack, (</>), FileInfo(..), fromString)
 import GenericOIDC (oidcAuth')
 import Yesod
 import Yesod.Auth
@@ -25,6 +25,7 @@ import Control.Monad.Logger (runStdoutLoggingT)
 import Database.Persist.Sqlite (createSqlitePool, ConnectionPool)
 import Data.Snowflake (SnowflakeGen, nextSnowflake, Snowflake)
 import Yesod.Form.Bootstrap3
+import Text.Julius
 
 data Yamgur = Yamgur
   { httpManager :: Manager,
@@ -69,9 +70,14 @@ instance RenderMessage Yamgur FormMessage where
   renderMessage _ _ = defaultFormMessage
 
 
-uploadForm :: Html -> MForm Handler (FormResult FileInfo, Widget)
-uploadForm = renderBootstrap3 BootstrapBasicForm $
-    fileAFormReq "Image file"
+fileInputId :: Text
+fileInputId = "file_input"
+
+uploadAForm :: AForm Handler FileInfo
+uploadAForm = areq fileField (FieldSettings (fromString "Image") Nothing (Just fileInputId) Nothing []) Nothing
+
+uploadMForm :: Html -> MForm Handler (FormResult FileInfo, Widget)
+uploadMForm = renderBootstrap3 BootstrapBasicForm uploadAForm
 
 getHomeR :: Handler Html
 getHomeR = do
@@ -91,8 +97,18 @@ getHomeR = do
 
 getUploadR :: Handler Html
 getUploadR = do
-  ((_, widget), enctype) <- runFormPost uploadForm
+  ((_, widget), enctype) <- runFormPost uploadMForm
   mmsg <- getMessage
+  let form_id = "image_form" :: String
+  
+  let pasteScript = [julius|
+  const form = document.getElementById(#{form_id});
+  const fileInput = document.getElementById(#{fileInputId});
+  
+  fileInput.addEventListener('change', () => {form.submit();});
+  window.addEventListener('paste', e => {fileInput.files = e.clipboardData.files;});
+  |]
+  
   defaultLayout $ do
           [whamlet|$newline never
   $maybe msg <- mmsg
@@ -104,15 +120,16 @@ getUploadR = do
           <h2>
               Upload new image
           <div .form-actions>
-              <form method=post enctype=#{enctype}>
+              <form method=post enctype=#{enctype} id=#{form_id}>
                   ^{widget}
                   <input .btn type=submit value="Upload">
+              ^{pasteScript}
 
   |]
 
 postUploadR :: Handler Html
 postUploadR = do
-    ((result, widget), enctype) <- runFormPost uploadForm
+    ((result, _), _) <- runFormPost uploadMForm
     case result of
         FormSuccess file -> do
             -- save to image directory
