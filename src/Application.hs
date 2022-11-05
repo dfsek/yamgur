@@ -24,16 +24,7 @@ import Yesod.Static
 import Control.Monad.Logger (runStdoutLoggingT)
 import Database.Persist.Sqlite (createSqlitePool, ConnectionPool)
 import Data.Snowflake (SnowflakeGen, nextSnowflake, Snowflake)
-import Filesystem.Path (parent)
-
-share [mkPersist sqlSettings,mkMigrate "migrateAll"] [persistUpperCase|
-Image
-    filename String
-    snowflake Int
-    date UTCTime
-    deriving Show
-|]
-
+import Yesod.Form.Bootstrap3
 
 data Yamgur = Yamgur
   { httpManager :: Manager,
@@ -77,11 +68,10 @@ instance YesodAuth Yamgur where
 instance RenderMessage Yamgur FormMessage where
   renderMessage _ _ = defaultFormMessage
 
-uploadForm :: Html -> MForm Handler (FormResult (FileInfo, Maybe Textarea, UTCTime), Widget)
-uploadForm = renderBootstrap $ (,,)
-    <$> fileAFormReq "Image file"
-    <*> aopt textareaField "Image description" Nothing
-    <*> lift (liftIO getCurrentTime)
+
+uploadForm :: Html -> MForm Handler (FormResult FileInfo, Widget)
+uploadForm = renderBootstrap3 BootstrapBasicForm $
+    fileAFormReq "Image file"
 
 getHomeR :: Handler Html
 getHomeR = do
@@ -117,22 +107,21 @@ getUploadR = do
               <form method=post enctype=#{enctype}>
                   ^{widget}
                   <input .btn type=submit value="Upload">
-          
+
   |]
 
 postUploadR :: Handler Html
 postUploadR = do
     ((result, widget), enctype) <- runFormPost uploadForm
     case result of
-        FormSuccess (file, info, date) -> do
+        FormSuccess file -> do
             -- save to image directory
             yamgur <- getYesod
-                        
             flake <- liftIO $ nextSnowflake (snowflakeGen yamgur)
             let filename = unpack $ fileName file
             liftIO $ putStrLn $ "File Name " <> filename
             let path = content_directory (config yamgur) </> show flake </> filename
-            
+
             liftIO $ do
               createDirectoryIfMissing True $ content_directory (config yamgur) </> show flake
               fileMove file path
