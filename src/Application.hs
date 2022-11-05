@@ -8,6 +8,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Application where
 
@@ -23,7 +24,7 @@ import System.Directory (createDirectoryIfMissing)
 import Yesod.Static
 import Control.Monad.Logger (runStdoutLoggingT)
 import Database.Persist.Sqlite (createSqlitePool, ConnectionPool)
-import Data.Snowflake (SnowflakeGen, nextSnowflake, Snowflake)
+import Data.Snowflake (SnowflakeGen, nextSnowflake, Snowflake, snowflakeToInteger)
 import Yesod.Form.Bootstrap3
 import Text.Julius
 import URI.ByteString (URIRef, Absolute)
@@ -39,11 +40,11 @@ data Yamgur = Yamgur
 mkYesod
   "Yamgur"
   [parseRoutes|
-/auth   AuthR Auth getAuth
-/       HomeR GET
-/img    ImgR Static getStatic
-/upload UploadR GET POST
-/view   ViewR GET
+/auth                  AuthR Auth getAuth
+/                      HomeR GET
+/img                   ImgR Static getStatic
+/upload                UploadR GET POST
+/view/#Integer/#Text   ViewR GET
 |]
 
 instance Yesod Yamgur where
@@ -98,27 +99,20 @@ getHomeR = do
         |]
 
 
-tupleify :: Monad m => m a -> m b -> m (a, b)
-tupleify a b = a >>= (\a' -> b >>= \b' -> return (a', b'))
-
-getViewR :: Handler Html
-getViewR = do
-  imgID <- lookupGetParam "img"
-  flake <- lookupGetParam "flake"
+getViewR :: Integer -> Text -> Handler Html
+getViewR flake img = do
   yamgur <- getYesod
-  let baseURL = host (config yamgur)
-  defaultLayout $ case tupleify imgID flake of
-    Just (id, f) -> [whamlet|
+  let baseURL = pack (unpack (host (config yamgur))) <> "/img/" <> show flake <> "/" <> unpack img
+  defaultLayout [whamlet|
       <h1>
-        Image #{id}
-      <img src=#{baseURL}/img/#{f}/#{id}>
+        Image #{img}
+      <img src=#{baseURL}>
       <p>
-        Permalink: <a href=#{baseURL}/img/#{f}/#{id}>#{baseURL}/img/#{f}/#{id}
+        Permalink: <a href=#{baseURL}>#{baseURL}
+      <p>
+        <a href=@{HomeR}>Home</a> <a href=@{UploadR}>Upload</a>
     |]
-    Nothing -> [whamlet|
-      <h1>
-        Invalid parameters.
-    |]
+
 
 getUploadR :: Handler Html
 getUploadR = do
@@ -161,8 +155,7 @@ postUploadR = do
             yamgur <- getYesod
             flake <- liftIO $ nextSnowflake (snowflakeGen yamgur)
             let filename = unpack $ fileName file
-            liftIO $ putStrLn $ "File Name " <> filename
-            let path = content_directory (config yamgur) </> show flake </> filename
+                path = content_directory (config yamgur) </> show flake </> filename
 
             liftIO $ do
               createDirectoryIfMissing True $ content_directory (config yamgur) </> show flake
@@ -170,7 +163,7 @@ postUploadR = do
             let uploadPath = unpack (host (config yamgur)) <> "/" <> path
             liftIO $ putStrLn $ "Saved image as " <> uploadPath
             setMessage "Image saved"
-            redirect (ViewR, [("flake", pack $ show flake), ("img", fileName file)])  
+            redirect $ ViewR (snowflakeToInteger flake) (fileName file)
         _ -> do
             setMessage "Something went wrong"
             redirect UploadR
