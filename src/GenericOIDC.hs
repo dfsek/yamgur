@@ -17,7 +17,7 @@ instance FromJSON User where
   parseJSON =
     withObject "User" $ \o ->
       User
-        <$> (("uid:" <>) <$> o .: "sub")
+        <$> o .: "preferred_username" -- TODO: make this dynamic
 
 oidcAuth' :: YesodAuth m => OIDCConfig -> AuthPlugin m
 oidcAuth' = oidcAuth [whamlet|Login via #{pluginName}|]
@@ -32,6 +32,7 @@ oidcAuth widget config =
         token
         "https://keycloak.dfsek.com/realms/dfsek.com/protocol/openid-connect/userinfo"
     print userResponse
+    print userId
     pure
       Creds
         { credsPlugin = pluginName,

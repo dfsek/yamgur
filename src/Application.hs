@@ -41,6 +41,7 @@ instance YesodAuth Yamgur where
 instance RenderMessage Yamgur FormMessage where
   renderMessage _ _ = defaultFormMessage
 
+
 getHomeR :: Handler Html
 getHomeR = do
   maid <- maybeAuthId
@@ -58,7 +59,7 @@ getHomeR = do
 appMain :: IO ()
 appMain = do
   c' <- decodeFileEither "config.yml"
-  case c' of 
+  case c' of
     Left e -> error $ "Could not parse config file: " <> show e
     Right c -> do
       putStrLn $ "Launching application at " <> show (host c)
