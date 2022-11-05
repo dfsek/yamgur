@@ -11,7 +11,7 @@
 
 module Application where
 
-import ClassyPrelude.Yesod (newManager, Static, UTCTime, getCurrentTime, unpack, (</>), FileInfo(..), fromString)
+import ClassyPrelude.Yesod (newManager, Static, UTCTime, getCurrentTime, unpack, (</>), FileInfo(..), fromString, asText, pack)
 import GenericOIDC (oidcAuth')
 import Yesod
 import Yesod.Auth
@@ -26,6 +26,7 @@ import Database.Persist.Sqlite (createSqlitePool, ConnectionPool)
 import Data.Snowflake (SnowflakeGen, nextSnowflake, Snowflake)
 import Yesod.Form.Bootstrap3
 import Text.Julius
+import URI.ByteString (URIRef, Absolute)
 
 data Yamgur = Yamgur
   { httpManager :: Manager,
@@ -42,6 +43,7 @@ mkYesod
 /       HomeR GET
 /img    ImgR Static getStatic
 /upload UploadR GET POST
+/view   ViewR GET
 |]
 
 instance Yesod Yamgur where
@@ -95,20 +97,43 @@ getHomeR = do
               <a href=@{AuthR LoginR}>Log in
         |]
 
+
+tupleify :: Monad m => m a -> m b -> m (a, b)
+tupleify a b = a >>= (\a' -> b >>= \b' -> return (a', b'))
+
+getViewR :: Handler Html
+getViewR = do
+  imgID <- lookupGetParam "img"
+  flake <- lookupGetParam "flake"
+  yamgur <- getYesod
+  let baseURL = host (config yamgur)
+  defaultLayout $ case tupleify imgID flake of
+    Just (id, f) -> [whamlet|
+      <h1>
+        Image #{id}
+      <img src=#{baseURL}/img/#{f}/#{id}>
+      <p>
+        Permalink: <a href=#{baseURL}/img/#{f}/#{id}>#{baseURL}/img/#{f}/#{id}
+    |]
+    Nothing -> [whamlet|
+      <h1>
+        Invalid parameters.
+    |]
+
 getUploadR :: Handler Html
 getUploadR = do
   ((_, widget), enctype) <- runFormPost uploadMForm
   mmsg <- getMessage
+
   let form_id = "image_form" :: String
-  
-  let pasteScript = [julius|
+      pasteScript = [julius|
   const form = document.getElementById(#{form_id});
   const fileInput = document.getElementById(#{fileInputId});
-  
+
   fileInput.addEventListener('change', () => {form.submit();});
   window.addEventListener('paste', e => {fileInput.files = e.clipboardData.files;});
   |]
-  
+
   defaultLayout $ do
           [whamlet|$newline never
   $maybe msg <- mmsg
@@ -142,9 +167,10 @@ postUploadR = do
             liftIO $ do
               createDirectoryIfMissing True $ content_directory (config yamgur) </> show flake
               fileMove file path
-            liftIO $ putStrLn $ "Saved image as " <> unpack (host (config yamgur)) <> "/" <> path
+            let uploadPath = unpack (host (config yamgur)) <> "/" <> path
+            liftIO $ putStrLn $ "Saved image as " <> uploadPath
             setMessage "Image saved"
-            redirect HomeR
+            redirect (ViewR, [("flake", pack $ show flake), ("img", fileName file)])  
         _ -> do
             setMessage "Something went wrong"
             redirect UploadR
