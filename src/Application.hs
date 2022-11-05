@@ -3,10 +3,15 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Application where
 
-import ClassyPrelude.Yesod (newManager, Static)
+import ClassyPrelude.Yesod (newManager, Static, UTCTime, getCurrentTime, unpack, (</>))
 import GenericOIDC (oidcAuth')
 import Yesod
 import Yesod.Auth
@@ -18,28 +23,39 @@ import System.Directory (createDirectoryIfMissing)
 import Yesod.Static
 import Control.Monad.Logger (runStdoutLoggingT)
 import Database.Persist.Sqlite (createSqlitePool, ConnectionPool)
+import Data.Snowflake (SnowflakeGen, nextSnowflake, Snowflake)
+import Filesystem.Path (parent)
+
+share [mkPersist sqlSettings,mkMigrate "migrateAll"] [persistUpperCase|
+Image
+    filename String
+    snowflake Int
+    date UTCTime
+    deriving Show
+|]
+
 
 data Yamgur = Yamgur
   { httpManager :: Manager,
     config :: YamgurConfig,
     getStatic :: Static,
-    connPool :: ConnectionPool
+    connPool :: ConnectionPool,
+    snowflakeGen :: SnowflakeGen
   }
 
 mkYesod
   "Yamgur"
   [parseRoutes|
-/auth AuthR Auth getAuth
-/     HomeR GET
-/img  ImgR Static getStatic
-
-/upload UploadR GET
+/auth   AuthR Auth getAuth
+/       HomeR GET
+/img    ImgR Static getStatic
+/upload UploadR GET POST
 |]
 
 instance Yesod Yamgur where
   approot = ApprootMaster $ host . config
   authRoute _ = Just $ AuthR LoginR
-  
+
   isAuthorized UploadR _ = isSignedIn
   isAuthorized _ _ = return Authorized
 
@@ -49,7 +65,7 @@ isSignedIn = do
     return $ case user of
         Nothing -> AuthenticationRequired
         Just _ -> Authorized
-  
+
 instance YesodAuth Yamgur where
   type AuthId Yamgur = Text
   authenticate = return . Authenticated . credsIdent
@@ -60,6 +76,12 @@ instance YesodAuth Yamgur where
 
 instance RenderMessage Yamgur FormMessage where
   renderMessage _ _ = defaultFormMessage
+
+uploadForm :: Html -> MForm Handler (FormResult (FileInfo, Maybe Textarea, UTCTime), Widget)
+uploadForm = renderBootstrap $ (,,)
+    <$> fileAFormReq "Image file"
+    <*> aopt textareaField "Image description" Nothing
+    <*> lift (liftIO getCurrentTime)
 
 getHomeR :: Handler Html
 getHomeR = do
@@ -78,27 +100,66 @@ getHomeR = do
         |]
 
 getUploadR :: Handler Html
-getUploadR = defaultLayout
-    [whamlet|
-        <h1>Upload Image
-        <p>
-            <a href=@{HomeR}>Return to homepage
-    |]
+getUploadR = do
+  ((_, widget), enctype) <- runFormPost uploadForm
+  mmsg <- getMessage
+  defaultLayout $ do
+          [whamlet|$newline never
+  $maybe msg <- mmsg
+      <div .message>
+          <div .container>
+              #{msg}
+  <div .container>
+      <div .row>
+          <h2>
+              Upload new image
+          <div .form-actions>
+              <form method=post enctype=#{enctype}>
+                  ^{widget}
+                  <input .btn type=submit value="Upload">
+          
+  |]
+
+postUploadR :: Handler Html
+postUploadR = do
+    ((result, widget), enctype) <- runFormPost uploadForm
+    case result of
+        FormSuccess (file, info, date) -> do
+            -- save to image directory
+            yamgur <- getYesod
+                        
+            flake <- liftIO $ nextSnowflake (snowflakeGen yamgur)
+            let filename = unpack $ fileName file
+            liftIO $ putStrLn $ "File Name " <> filename
+            let path = content_directory (config yamgur) </> show flake </> filename
+            
+            liftIO $ do
+              createDirectoryIfMissing True $ content_directory (config yamgur) </> show flake
+              fileMove file path
+            liftIO $ putStrLn $ "Saved image as " <> path
+            setMessage "Image saved"
+            redirect HomeR
+        _ -> do
+            setMessage "Something went wrong"
+            redirect UploadR
+
 
 appMain :: IO ()
 appMain = do
   c' <- decodeFileEither "config.yml"
   case c' of
     Left e -> error $ "Could not parse config file: " <> show e
-    Right c -> do
-      p <- runStdoutLoggingT $ createSqlitePool "images.db3" $ connection_count (database c)
-      
-      let contentDir = content_directory c
+    Right config -> do
+      pool <- runStdoutLoggingT $ createSqlitePool "images.db3" $ connection_count (database config)
+
+      let contentDir = content_directory config
       createDirectoryIfMissing True contentDir
       putStrLn $ "Images will be saved to " <> contentDir
-      
-      s <- static contentDir
-      putStrLn $ "Launching application at " <> show (host c)
-      
-      m <- newManager
-      warp 3001 $ Yamgur m c s p
+
+      staticRoute <- static contentDir
+      putStrLn $ "Launching application at " <> show (host config)
+
+      manager <- newManager
+
+      snowflake <- io (snowflakes config)
+      warp 3001 $ Yamgur manager config staticRoute pool snowflake

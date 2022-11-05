@@ -49,6 +49,9 @@ dependencies:
 - yaml
 - uri-bytestring
 - uri-bytestring-aeson
+- snowflake
+- image-type
+- system-filepath
 
 # The library contains all of our application code. The executable
 # defined below is just a thin wrapper.

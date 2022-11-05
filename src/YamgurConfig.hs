@@ -2,20 +2,31 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-module YamgurConfig (OIDCConfig (..), YamgurConfig (..), DatabaseConfig (..)) where
+module YamgurConfig (OIDCConfig (..), YamgurConfig (..), DatabaseConfig (..), io) where
 
 import ClassyPrelude.Conduit (Generic)
 import Data.Aeson
+import Data.Aeson.TH
 import Data.Text (Text)
 import URI.ByteString
 import URI.ByteString.Aeson
+import Data.Snowflake (SnowflakeGen, newSnowflakeGen, SnowflakeConfig (..))
 
-newtype AbsoluteURI = URIRef Absolute deriving (Generic)
+newtype SnowflakeW = SnowflakeW {io :: IO SnowflakeGen}
+
+instance FromJSON SnowflakeW where
+  parseJSON = withObject "SnowflakeGen" $ \o -> fmap SnowflakeW $ newSnowflakeGen
+    <$> o .: "config"
+    <*> o .: "node"
+    
+$(deriveJSON defaultOptions 'SnowflakeConfig)
 
 data YamgurConfig = YamgurConfig
   { oidc :: OIDCConfig,
     database :: DatabaseConfig,
+    snowflakes :: SnowflakeW,
     host :: Text,
     content_directory :: String
   }
@@ -34,3 +45,5 @@ data OIDCConfig = OIDCConfig
     oidc_auth_url :: URIRef Absolute
   }
   deriving (Generic, FromJSON)
+
+

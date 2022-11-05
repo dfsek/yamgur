@@ -42,6 +42,7 @@ packages:
 #
 extra-deps:
   - yesod-auth-oauth2-0.7.0.2@sha256:b1dabedb8a22a97d74febd3d76b764596847ad1a5e40dd473ffb5d4098723bf3,3410
+  - image-type-0.1.0.0@sha256:47033c893690f2cea85ba867343f277a8e2594f9010a5466a39dc7f3c4d682f2,1676
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
