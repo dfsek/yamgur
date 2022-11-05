@@ -12,15 +12,15 @@
 
 module Application where
 
-import ClassyPrelude.Yesod (FileInfo (..), Static, UTCTime, asText, fromString, getCurrentTime, newManager, pack, unpack, (</>))
+import ClassyPrelude.Yesod (fromString, newManager, pack, unpack, (</>))
 import Control.Monad.Logger (runStdoutLoggingT)
-import Data.Snowflake (Snowflake, SnowflakeGen, nextSnowflake, snowflakeToInteger)
+import Data.Snowflake (SnowflakeGen, nextSnowflake, snowflakeToInteger)
 import Data.Yaml.Aeson (decodeFileEither)
 import Database.Persist.Sqlite (ConnectionPool, createSqlitePool)
 import GenericOIDC (oidcAuth')
 import System.Directory (createDirectoryIfMissing)
 import Text.Julius
-import URI.ByteString (Absolute, URIRef)
+import URI.ByteString ()
 import YamgurConfig
 import Yesod
 import Yesod.Auth
@@ -28,6 +28,7 @@ import Yesod.Auth.OAuth2.Prelude
 import Yesod.Form.Bootstrap3
 import Yesod.Static
 import Prelude
+import Text.Cassius
 
 data Yamgur = Yamgur
   { httpManager :: Manager,
@@ -47,6 +48,7 @@ mkYesod
 /view/#Integer/#Text   ViewR GET
 |]
 
+css :: p -> Css
 css =
   [cassius|
 body
@@ -107,8 +109,8 @@ getHomeR = do
             <a href="https://www.haskell.org/">Haskell
             and uses the 
             <a href="https://www.yesodweb.com/">Yesod
-            web framework. You can find the source code 
-            <a href="https://github.com/dfsek/yamgur">Here</a>. 
+            web framework. You can find the source code
+            <a href="https://github.com/dfsek/yamgur">Here</a>.
             Enjoy!
           $maybe un <- user
             <p>Logged in as #{un}
@@ -196,17 +198,17 @@ appMain = do
   c' <- decodeFileEither "config.yml"
   case c' of
     Left e -> error $ "Could not parse config file: " <> show e
-    Right config -> do
-      pool <- runStdoutLoggingT $ createSqlitePool "images.db3" $ connection_count (database config)
+    Right conf -> do
+      pool <- runStdoutLoggingT $ createSqlitePool "images.db3" $ connection_count (database conf)
 
-      let contentDir = content_directory config
+      let contentDir = content_directory conf
       createDirectoryIfMissing True contentDir
       putStrLn $ "Images will be saved to " <> contentDir
 
       staticRoute <- static contentDir
-      putStrLn $ "Launching application at " <> show (host config)
+      putStrLn $ "Launching application at " <> show (host conf)
 
       manager <- newManager
 
-      snowflake <- io (snowflakes config)
-      warp 3001 $ Yamgur manager config staticRoute pool snowflake
+      snowflake <- io (snowflakes conf)
+      warp 3001 $ Yamgur manager conf staticRoute pool snowflake
