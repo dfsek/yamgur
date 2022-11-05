@@ -6,7 +6,7 @@
 
 module Application where
 
-import ClassyPrelude.Yesod (newManager)
+import ClassyPrelude.Yesod (newManager, Static)
 import GenericOIDC (oidcAuth')
 import Yesod
 import Yesod.Auth
@@ -14,10 +14,13 @@ import Yesod.Auth.OAuth2.Prelude
 import Prelude
 import YamgurConfig
 import Data.Yaml.Aeson (decodeFileEither)
+import System.Directory (createDirectoryIfMissing)
+import Yesod.Static
 
 data Yamgur = Yamgur
   { httpManager :: Manager,
-    config :: YamgurConfig
+    config :: YamgurConfig,
+    getStatic :: Static
   }
 
 mkYesod
@@ -25,6 +28,7 @@ mkYesod
   [parseRoutes|
 /auth AuthR Auth getAuth
 /     HomeR GET
+/img  ImgR Static getStatic
 |]
 
 instance Yesod Yamgur where
@@ -41,19 +45,18 @@ instance YesodAuth Yamgur where
 instance RenderMessage Yamgur FormMessage where
   renderMessage _ _ = defaultFormMessage
 
-
 getHomeR :: Handler Html
 getHomeR = do
-  maid <- maybeAuthId
+  user <- maybeAuthId
   defaultLayout
         [whamlet|
-            <p>Your current auth ID: #{show maid}
-            $maybe _ <- maid
-                <p>
-                    <a href=@{AuthR LogoutR}>Logout
-            $nothing
-                <p>
-                    <a href=@{AuthR LoginR}>Go to the login page
+          $maybe un <- user
+            <p>Logged in as #{un}
+            <p>
+              <a href=@{AuthR LogoutR}>Logout
+          $nothing
+            <p>
+              <a href=@{AuthR LoginR}>Log in
         |]
 
 appMain :: IO ()
@@ -62,6 +65,10 @@ appMain = do
   case c' of
     Left e -> error $ "Could not parse config file: " <> show e
     Right c -> do
+      let contentDir = content_directory c
+      createDirectoryIfMissing True contentDir
+      putStrLn $ "Images will be saved to " <> contentDir
+      s <- static contentDir
       putStrLn $ "Launching application at " <> show (host c)
       m <- newManager
-      warp 3001 $ Yamgur m c
+      warp 3001 $ Yamgur m c s

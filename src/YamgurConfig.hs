@@ -16,7 +16,8 @@ newtype AbsoluteURI = URIRef Absolute deriving (Generic)
 
 data YamgurConfig = YamgurConfig
   { oidc :: OIDCConfig,
-  host :: Text
+  host :: Text,
+  content_directory :: String
   } deriving (Generic, FromJSON)
 
 data OIDCConfig = OIDCConfig
