@@ -44,7 +44,8 @@ data OIDCConfig = OIDCConfig
     token_url :: URIRef Absolute,
     auth_url :: URIRef Absolute,
     user_info :: URIRef Absolute,
-    username_attribute :: Text
+    username_attribute :: Text,
+    plugin_name :: Text
   }
   deriving (Generic, FromJSON)
 

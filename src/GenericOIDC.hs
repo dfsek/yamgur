@@ -15,15 +15,13 @@ import Data.Text (Text, unpack)
 import Prelude
 import Lens.Micro ((^?))
 
-pluginName :: Text
-pluginName = "oidc"
-
 
 oidcAuth' :: YesodAuth m => OIDCConfig -> AuthPlugin m
-oidcAuth' = oidcAuth [whamlet|Login via #{pluginName}|]
+oidcAuth' config = oidcAuth [whamlet|Login with #{plugin_name config}|] config
 
 oidcAuth :: YesodAuth m => WidgetFor m () -> OIDCConfig -> AuthPlugin m
 oidcAuth widget config =
+  let pluginName = plugin_name config in
   authOAuth2Widget widget pluginName oauth2 $ \manager token -> do
     (json, userResponse) <- do
       resp <- authGetBS manager (accessToken token) (user_info config)
