@@ -34,11 +34,11 @@ oidcAuth widget config =
     let unKey = username_attribute config
 
     username <- case json ^? key unKey . _String of
-      Nothing -> return "" 
+      Nothing -> throwIO $ YesodOAuth2Exception.JSONDecodingError pluginName ("No such key " <> show unKey <> " in response.")
       Just s -> return s
-    
+
     putStrLn $ "Username: " <> unpack username
-    
+
     pure
       Creds
         { credsPlugin = pluginName,
