@@ -39,11 +39,12 @@ data DatabaseConfig = DatabaseConfig
   deriving (Generic, FromJSON)
 
 data OIDCConfig = OIDCConfig
-  { oidc_secret :: Text,
-    oidc_client_id :: Text,
-    oidc_token_url :: URIRef Absolute,
-    oidc_auth_url :: URIRef Absolute,
-    oidc_user_info :: URIRef Absolute
+  { secret :: Text,
+    client_id :: Text,
+    token_url :: URIRef Absolute,
+    auth_url :: URIRef Absolute,
+    user_info :: URIRef Absolute,
+    username_attribute :: Text
   }
   deriving (Generic, FromJSON)
 
