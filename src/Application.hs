@@ -12,16 +12,24 @@
 
 module Application where
 
-import ClassyPrelude.Yesod (fromString, newManager, pack, unpack, (</>), runMigration)
+import ClassyPrelude.Yesod (ReaderT, fromString, newManager, pack, runMigration, unpack, (</>))
 import Control.Monad.Logger (runStdoutLoggingT)
+import Data.Int (Int64)
 import Data.Snowflake (SnowflakeGen, nextSnowflake, snowflakeToInteger)
+import Data.Time (UTCTime, getCurrentTime)
 import Data.Yaml.Aeson (decodeFileEither)
 import Database.Persist.Sqlite
-    ( ConnectionPool, SqlPersistT, runSqlPool, runMigration
-    , createSqlitePool, runSqlPersistMPool, SqlBackend
-    )
+  ( ConnectionPool,
+    SqlBackend,
+    SqlPersistT,
+    createSqlitePool,
+    runMigration,
+    runSqlPersistMPool,
+    runSqlPool,
+  )
 import GenericOIDC (oidcAuth')
 import System.Directory (createDirectoryIfMissing)
+import Text.Cassius
 import Text.Julius
 import URI.ByteString ()
 import YamgurConfig
@@ -31,8 +39,7 @@ import Yesod.Auth.OAuth2.Prelude
 import Yesod.Form.Bootstrap3
 import Yesod.Static
 import Prelude
-import Text.Cassius
-import Data.Int (Int64)
+import Data.Word as W
 
 data Yamgur = Yamgur
   { httpManager :: Manager,
@@ -42,13 +49,15 @@ data Yamgur = Yamgur
     snowflakeGen :: SnowflakeGen
   }
 
-share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
+share
+  [mkPersist sqlSettings, mkMigrate "migrateAll"]
+  [persistLowerCase|
 Upload
   flake Int64
   files [String]
   user Text
+  uploaded UTCTime
 |]
-
 
 mkYesod
   "Yamgur"
@@ -58,6 +67,7 @@ mkYesod
 /img                   ImgR Static getStatic
 /upload                UploadR GET POST
 /view/#Integer/        ViewR GET
+/uploads/#Integer      UploadsR GET
 |]
 
 css :: p -> Css
@@ -79,6 +89,7 @@ instance Yesod Yamgur where
   authRoute _ = Just $ AuthR LoginR
 
   isAuthorized UploadR _ = isSignedIn
+  isAuthorized (UploadsR _) _ = isSignedIn
   isAuthorized _ _ = return Authorized
 
 isSignedIn :: HandlerFor Yamgur AuthResult
@@ -98,13 +109,13 @@ instance YesodAuth Yamgur where
 
 instance RenderMessage Yamgur FormMessage where
   renderMessage _ _ = defaultFormMessage
-  
+
 instance YesodPersist Yamgur where
-   type YesodPersistBackend Yamgur = SqlBackend
-   runDB f = do
-       yamgur <- getYesod
-       let pool = connPool yamgur
-       runSqlPool f pool
+  type YesodPersistBackend Yamgur = SqlBackend
+  runDB f = do
+    yamgur <- getYesod
+    let pool = connPool yamgur
+    runSqlPool f pool
 
 fileInputId :: Text
 fileInputId = "file_input"
@@ -144,11 +155,14 @@ getHomeR = do
             <p>#{msg}
         |]
 
+unwrapResult :: (Monad m, Functor f) => m (f (Entity b)) -> m (f b)
+unwrapResult result = result >>= (\m -> return $ entityVal <$> m)
+
 getViewR :: Integer -> Handler Html
 getViewR flake = do
   yamgur <- getYesod
   mmsg <- getMessage
-  db <- runDB (selectFirst [UploadFlake ==. fromIntegral flake] []) >>= (\m -> return $ entityVal <$> m)
+  db <- unwrapResult $ runDB (selectFirst [UploadFlake ==. fromIntegral flake] [])
   let baseURL = pack (unpack (host (config yamgur))) <> "/img/" <> show flake <> "/"
   defaultLayout
     [whamlet|
@@ -197,6 +211,43 @@ getUploadR = do
 
   |]
 
+i64toUnsigned :: Int64 -> Word64
+i64toUnsigned = fromIntegral
+
+getUploadsR :: Integer -> Handler Html
+getUploadsR page = do
+  mmsg <- getMessage
+  username <- requireAuthId
+  uploads <-
+    unwrapResult $ runDB $
+      selectList
+        [UploadUser ==. username]
+        [ Desc UploadUploaded,
+          Asc UploadFlake,
+          LimitTo 10,
+          OffsetBy $ (fromIntegral page - 1) * 10
+        ]
+  yamgur <- getYesod
+  let baseUrl = host (config yamgur) <> "/img/"
+  defaultLayout
+    [whamlet|
+        ^{css}
+        $maybe msg <- mmsg
+          <p>#{msg}
+        <h1>
+          Uploads by #{username}
+        $forall upload <- uploads
+          $with url <- baseUrl <> pack (show (i64toUnsigned (uploadFlake upload)))
+            <div>
+              $forall img <- uploadFiles upload
+                <h2>Image #{img}
+                <img src=#{url}/#{img}>
+                <p>
+                  Permalink: <a href=#{url}/#{img}>#{img}
+        <p>
+          <a href=@{HomeR}>Home</a> <a href=@{UploadR}>Upload</a>
+      |]
+
 postUploadR :: Handler Html
 postUploadR = do
   ((result, _), _) <- runFormPost uploadMForm
@@ -215,8 +266,10 @@ postUploadR = do
       let uploadPath = unpack (host (config yamgur)) <> "/" <> path
       liftIO $ putStrLn $ "Saved image as " <> uploadPath
       setMessage "Image saved"
-      
-      let entry = Upload (fromIntegral $ snowflakeToInteger flake) [filename] username
+
+      time <- liftIO getCurrentTime
+
+      let entry = Upload (fromIntegral $ snowflakeToInteger flake) [filename] username time
       _ <- runDB $ insert entry
       redirect $ ViewR $ snowflakeToInteger flake
     _ -> do
