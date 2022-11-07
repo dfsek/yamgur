@@ -33,7 +33,8 @@ data YamgurConfig = YamgurConfig
     database :: DatabaseConfig,
     snowflakes :: SnowflakeW,
     host :: Text,
-    content_directory :: String
+    content_directory :: String,
+    time_format :: String
   }
   deriving (Generic, FromJSON)
 

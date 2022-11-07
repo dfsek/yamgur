@@ -40,6 +40,7 @@ import Yesod.Form.Bootstrap3
 import Yesod.Static
 import Prelude
 import Data.Word as W
+import Data.Time.Format (defaultTimeLocale, formatTime, FormatTime)
 
 data Yamgur = Yamgur
   { httpManager :: Manager,
@@ -68,6 +69,7 @@ mkYesod
 /upload                UploadR GET POST
 /view/#Integer/        ViewR GET
 /uploads/#Integer      UploadsR GET
+/uploads               UploadsRD GET
 |]
 
 css :: p -> Css
@@ -82,6 +84,12 @@ body
   padding: 0 10px
 h1, h2, h3
   line-height: 1.2
+|]
+
+footer :: WidgetFor Yamgur ()
+footer = [whamlet|
+<p>
+  <a href=@{HomeR}>Home</a> | <a href=@{UploadR}>Upload</a> | <a href=@{UploadsRD}>Your Images</a>
 |]
 
 instance Yesod Yamgur where
@@ -145,14 +153,13 @@ getHomeR = do
           $maybe un <- user
             <p>Logged in as #{un}
             <p>
-              <a href=@{UploadR}>Upload
-            <p>
               <a href=@{AuthR LogoutR}>Log out
           $nothing
             <p>
               <a href=@{AuthR LoginR}>Log in
           $maybe msg <- mmsg
             <p>#{msg}
+          ^{footer}
         |]
 
 unwrapResult :: (Monad m, Functor f) => m (f (Entity b)) -> m (f b)
@@ -176,11 +183,10 @@ getViewR flake = do
           <h2>Image #{img}
           <img src=#{baseURL}#{img}>
           <p>
-            Permalink: <a href=#{baseURL}#{img}>#{baseURL}#{img}
+            <a href=#{baseURL}#{img}>Permalink
       $nothing
         <p>No such post.
-      <p>
-        <a href=@{HomeR}>Home</a> <a href=@{UploadR}>Upload</a>
+      ^{footer}
     |]
 
 getUploadR :: Handler Html
@@ -208,11 +214,14 @@ getUploadR = do
     ^{widget}
     <input .btn type=submit value="Upload">
   ^{pasteScript}
-
+  ^{footer}
   |]
 
 i64toUnsigned :: Int64 -> Word64
 i64toUnsigned = fromIntegral
+
+getUploadsRD :: Handler Html
+getUploadsRD = redirect $ UploadsR 0
 
 getUploadsR :: Integer -> Handler Html
 getUploadsR page = do
@@ -225,10 +234,12 @@ getUploadsR page = do
         [ Desc UploadUploaded,
           Asc UploadFlake,
           LimitTo 10,
-          OffsetBy $ (fromIntegral page - 1) * 10
+          OffsetBy $ fromIntegral page * 10
         ]
   yamgur <- getYesod
   let baseUrl = host (config yamgur) <> "/img/"
+      format :: (FormatTime t) => t -> String
+      format = formatTime defaultTimeLocale $ time_format (config yamgur)
   defaultLayout
     [whamlet|
         ^{css}
@@ -236,16 +247,34 @@ getUploadsR page = do
           <p>#{msg}
         <h1>
           Uploads by #{username}
-        $forall upload <- uploads
-          $with url <- baseUrl <> pack (show (i64toUnsigned (uploadFlake upload)))
-            <div>
-              $forall img <- uploadFiles upload
-                <h2>Image #{img}
-                <img src=#{url}/#{img}>
-                <p>
-                  Permalink: <a href=#{url}/#{img}>#{img}
-        <p>
-          <a href=@{HomeR}>Home</a> <a href=@{UploadR}>Upload</a>
+        $if null uploads
+          <p>
+            $if page > 0
+              There's nothing here! Try these links:
+              <p>
+                $if page > 1
+                  <a href=@{UploadsR (page - 1)}>Previous Page
+                  | 
+                <a href=@{UploadsRD}>First Page
+            $else
+              You've not uploaded any images!
+        $else
+          $forall upload <- uploads
+            $with url <- baseUrl <> pack (show (i64toUnsigned (uploadFlake upload)))
+              <div>
+                $forall img <- uploadFiles upload
+                  <h2>Image #{img}
+                  <img src=#{url}/#{img}>
+                  <p>
+                    Uploaded at #{format (uploadUploaded upload)} | 
+                    <a href=#{url}/#{img}>Permalink
+          $if page > 1
+            <a href=@{UploadsR (page - 1)}>Previous Page
+             | 
+            <a href=@{UploadsRD}>First Page
+             | 
+          <a href=@{UploadsR (page + 1)}>Next Page
+        ^{footer}
       |]
 
 postUploadR :: Handler Html
