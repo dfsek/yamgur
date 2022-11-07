@@ -32,7 +32,7 @@ import Yesod.Form.Bootstrap3
 import Yesod.Static
 import Prelude
 import Text.Cassius
-import Persistent
+import Data.Int (Int64)
 
 data Yamgur = Yamgur
   { httpManager :: Manager,
@@ -42,6 +42,14 @@ data Yamgur = Yamgur
     snowflakeGen :: SnowflakeGen
   }
 
+share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
+Upload
+  flake Int64
+  files [String]
+  user Text
+|]
+
+
 mkYesod
   "Yamgur"
   [parseRoutes|
@@ -49,7 +57,7 @@ mkYesod
 /                      HomeR GET
 /img                   ImgR Static getStatic
 /upload                UploadR GET POST
-/view/#Integer/#Text   ViewR GET
+/view/#Integer/        ViewR GET
 |]
 
 css :: p -> Css
@@ -136,20 +144,27 @@ getHomeR = do
             <p>#{msg}
         |]
 
-getViewR :: Integer -> Text -> Handler Html
-getViewR flake img = do
+getViewR :: Integer -> Handler Html
+getViewR flake = do
   yamgur <- getYesod
   mmsg <- getMessage
-  let baseURL = pack (unpack (host (config yamgur))) <> "/img/" <> show flake <> "/" <> unpack img
+  db <- runDB (selectFirst [UploadFlake ==. fromIntegral flake] []) >>= (\m -> return $ entityVal <$> m)
+  let baseURL = pack (unpack (host (config yamgur))) <> "/img/" <> show flake <> "/"
   defaultLayout
     [whamlet|
       ^{css}
-      <h1>Image #{img}
       $maybe msg <- mmsg
         <p>#{msg}
-      <img src=#{baseURL}>
-      <p>
-        Permalink: <a href=#{baseURL}>#{baseURL}
+      $maybe upload <- db
+        <h1>
+          Uploaded by #{uploadUser upload}
+        $forall img <- uploadFiles upload
+          <h2>Image #{img}
+          <img src=#{baseURL}#{img}>
+          <p>
+            Permalink: <a href=#{baseURL}#{img}>#{baseURL}#{img}
+      $nothing
+        <p>No such post.
       <p>
         <a href=@{HomeR}>Home</a> <a href=@{UploadR}>Upload</a>
     |]
@@ -203,7 +218,7 @@ postUploadR = do
       
       let entry = Upload (fromIntegral $ snowflakeToInteger flake) [filename] username
       _ <- runDB $ insert entry
-      redirect $ ViewR (snowflakeToInteger flake) (fileName file)
+      redirect $ ViewR $ snowflakeToInteger flake
     _ -> do
       setMessage "Something went wrong"
       redirect UploadR
