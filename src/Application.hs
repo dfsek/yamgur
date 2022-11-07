@@ -12,11 +12,14 @@
 
 module Application where
 
-import ClassyPrelude.Yesod (fromString, newManager, pack, unpack, (</>))
+import ClassyPrelude.Yesod (fromString, newManager, pack, unpack, (</>), runMigration)
 import Control.Monad.Logger (runStdoutLoggingT)
 import Data.Snowflake (SnowflakeGen, nextSnowflake, snowflakeToInteger)
 import Data.Yaml.Aeson (decodeFileEither)
-import Database.Persist.Sqlite (ConnectionPool, createSqlitePool)
+import Database.Persist.Sqlite
+    ( ConnectionPool, SqlPersistT, runSqlPool, runMigration
+    , createSqlitePool, runSqlPersistMPool, SqlBackend
+    )
 import GenericOIDC (oidcAuth')
 import System.Directory (createDirectoryIfMissing)
 import Text.Julius
@@ -29,6 +32,7 @@ import Yesod.Form.Bootstrap3
 import Yesod.Static
 import Prelude
 import Text.Cassius
+import Persistent
 
 data Yamgur = Yamgur
   { httpManager :: Manager,
@@ -86,6 +90,13 @@ instance YesodAuth Yamgur where
 
 instance RenderMessage Yamgur FormMessage where
   renderMessage _ _ = defaultFormMessage
+  
+instance YesodPersist Yamgur where
+   type YesodPersistBackend Yamgur = SqlBackend
+   runDB f = do
+       yamgur <- getYesod
+       let pool = connPool yamgur
+       runSqlPool f pool
 
 fileInputId :: Text
 fileInputId = "file_input"
@@ -174,6 +185,7 @@ getUploadR = do
 postUploadR :: Handler Html
 postUploadR = do
   ((result, _), _) <- runFormPost uploadMForm
+  username <- requireAuthId
   case result of
     FormSuccess file -> do
       -- save to image directory
@@ -188,6 +200,9 @@ postUploadR = do
       let uploadPath = unpack (host (config yamgur)) <> "/" <> path
       liftIO $ putStrLn $ "Saved image as " <> uploadPath
       setMessage "Image saved"
+      
+      let entry = Upload (fromIntegral $ snowflakeToInteger flake) [filename] username
+      _ <- runDB $ insert entry
       redirect $ ViewR (snowflakeToInteger flake) (fileName file)
     _ -> do
       setMessage "Something went wrong"
@@ -200,6 +215,7 @@ appMain = do
     Left e -> error $ "Could not parse config file: " <> show e
     Right conf -> do
       pool <- runStdoutLoggingT $ createSqlitePool "images.db3" $ connection_count (database conf)
+      runSqlPersistMPool (runMigration migrateAll) pool
 
       let contentDir = content_directory conf
       createDirectoryIfMissing True contentDir
