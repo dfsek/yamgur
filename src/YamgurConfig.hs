@@ -11,7 +11,7 @@ import Data.Aeson
 import Data.Aeson.TH
 import Data.Text (Text)
 import URI.ByteString
-import URI.ByteString.Aeson
+import URI.ByteString.Aeson ()
 import Data.Snowflake (SnowflakeGen, newSnowflakeGen, SnowflakeConfig (..))
 
 newtype SnowflakeW = SnowflakeW {io :: IO SnowflakeGen}
@@ -20,8 +20,13 @@ instance FromJSON SnowflakeW where
   parseJSON = withObject "SnowflakeGen" $ \o -> fmap SnowflakeW $ newSnowflakeGen
     <$> o .: "config"
     <*> o .: "node"
-    
-$(deriveJSON defaultOptions 'SnowflakeConfig)
+
+
+instance FromJSON SnowflakeConfig where
+  parseJSON = withObject "SnowflakeConfig" $ \o -> SnowflakeConfig
+    <$> o .: "time_bits"
+    <*> o .: "count_bits"
+    <*> o .: "node_bits"
 
 data YamgurConfig = YamgurConfig
   { oidc :: OIDCConfig,

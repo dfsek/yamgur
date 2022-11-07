@@ -11,7 +11,7 @@ import qualified Yesod.Auth.OAuth2.Exception as YesodOAuth2Exception
 import Yesod.Auth.OAuth2.Prelude
 import Data.Aeson (Value)
 import Data.Aeson.Lens
-import Data.Text (Text, unpack)
+import Data.Text (unpack)
 import Prelude
 import Lens.Micro ((^?))
 
