@@ -217,9 +217,6 @@ getUploadR = do
   ^{footer}
   |]
 
-i64toUnsigned :: Int64 -> Word64
-i64toUnsigned = fromIntegral
-
 getUploadsRD :: Handler Html
 getUploadsRD = redirect $ UploadsR 0
 
@@ -240,6 +237,8 @@ getUploadsR page = do
   let baseUrl = host (config yamgur) <> "/img/"
       format :: (FormatTime t) => t -> String
       format = formatTime defaultTimeLocale $ time_format (config yamgur)
+      i64toUnsigned :: Int64 -> Word64
+      i64toUnsigned = fromIntegral
   defaultLayout
     [whamlet|
         ^{css}
