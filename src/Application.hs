@@ -33,6 +33,7 @@ import Yesod.Auth.OAuth2.Prelude
 import Yesod.Form.Bootstrap3
 import Yesod.Static
 import Prelude
+import qualified Web.ClientSession as CS
 
 data Yamgur = Yamgur
   { httpManager :: Manager,
@@ -76,6 +77,9 @@ body
   padding: 0 10px
 h1, h2, h3
   line-height: 1.2
+
+.display_img
+  max-width: 650px;
 |]
 
 footer :: WidgetFor Yamgur ()
@@ -92,6 +96,7 @@ instance Yesod Yamgur where
   isAuthorized UploadR _ = isSignedIn
   isAuthorized (UploadsR _) _ = isSignedIn
   isAuthorized _ _ = return Authorized
+  makeSessionBackend _ = Just <$> defaultClientSessionBackend (7 * 24 * 60) CS.defaultKeyFile
 
 isSignedIn :: HandlerFor Yamgur AuthResult
 isSignedIn = do
@@ -174,7 +179,7 @@ getViewR flake = do
           Uploaded by #{uploadUser upload}
         $forall img <- uploadFiles upload
           <h2>Image #{img}
-          <img src=#{baseURL}#{img}>
+          <img .display_img src=#{baseURL}#{img}>
           <p>
             <a href=#{baseURL}#{img}>Permalink
       $nothing
@@ -257,7 +262,7 @@ getUploadsR page = do
               <div>
                 $forall img <- uploadFiles upload
                   <h2>Image #{img}
-                  <img src=#{url}/#{img}>
+                  <img .display_img src=#{url}/#{img}>
                   <p>
                     Uploaded at #{format (uploadUploaded upload)} | 
                     <a href=#{url}/#{img}>Permalink
