@@ -12,21 +12,15 @@
 
 module Application where
 
-import ClassyPrelude.Yesod (ReaderT, fromString, newManager, pack, runMigration, unpack, (</>))
+import ClassyPrelude.Yesod (fromString, newManager, pack, runMigration, unpack, (</>))
 import Control.Monad.Logger (runStdoutLoggingT)
 import Data.Int (Int64)
 import Data.Snowflake (SnowflakeGen, nextSnowflake, snowflakeToInteger)
 import Data.Time (UTCTime, getCurrentTime)
+import Data.Time.Format (FormatTime, defaultTimeLocale, formatTime)
+import Data.Word as W
 import Data.Yaml.Aeson (decodeFileEither)
-import Database.Persist.Sqlite
-  ( ConnectionPool,
-    SqlBackend,
-    SqlPersistT,
-    createSqlitePool,
-    runMigration,
-    runSqlPersistMPool,
-    runSqlPool,
-  )
+import Database.Persist.Sqlite (ConnectionPool, SqlBackend, createSqlitePool, runSqlPersistMPool, runSqlPool)
 import GenericOIDC (oidcAuth')
 import System.Directory (createDirectoryIfMissing)
 import Text.Cassius
@@ -39,8 +33,6 @@ import Yesod.Auth.OAuth2.Prelude
 import Yesod.Form.Bootstrap3
 import Yesod.Static
 import Prelude
-import Data.Word as W
-import Data.Time.Format (defaultTimeLocale, formatTime, FormatTime)
 
 data Yamgur = Yamgur
   { httpManager :: Manager,
@@ -87,7 +79,8 @@ h1, h2, h3
 |]
 
 footer :: WidgetFor Yamgur ()
-footer = [whamlet|
+footer =
+  [whamlet|
 <p>
   <a href=@{HomeR}>Home</a> | <a href=@{UploadR}>Upload</a> | <a href=@{UploadsRD}>Your Images</a>
 |]
@@ -225,14 +218,15 @@ getUploadsR page = do
   mmsg <- getMessage
   username <- requireAuthId
   uploads <-
-    unwrapResult $ runDB $
-      selectList
-        [UploadUser ==. username]
-        [ Desc UploadUploaded,
-          Asc UploadFlake,
-          LimitTo 10,
-          OffsetBy $ fromIntegral page * 10
-        ]
+    unwrapResult $
+      runDB $
+        selectList
+          [UploadUser ==. username]
+          [ Desc UploadUploaded,
+            Asc UploadFlake,
+            LimitTo 10,
+            OffsetBy $ fromIntegral page * 10
+          ]
   yamgur <- getYesod
   let baseUrl = host (config yamgur) <> "/img/"
       format :: (FormatTime t) => t -> String
@@ -322,5 +316,5 @@ appMain = do
 
       manager <- newManager
 
-      snowflake <- io (snowflakes conf)
+      snowflake <- snowflakes conf
       warp 3001 $ Yamgur manager conf staticRoute pool snowflake

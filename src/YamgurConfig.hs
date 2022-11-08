@@ -4,20 +4,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module YamgurConfig (OIDCConfig (..), YamgurConfig (..), DatabaseConfig (..), io) where
+module YamgurConfig (OIDCConfig (..), YamgurConfig (..), DatabaseConfig (..)) where
 
 import ClassyPrelude.Conduit (Generic)
 import Data.Aeson
-import Data.Aeson.TH
 import Data.Text (Text)
 import URI.ByteString
 import URI.ByteString.Aeson ()
 import Data.Snowflake (SnowflakeGen, newSnowflakeGen, SnowflakeConfig (..))
 
-newtype SnowflakeW = SnowflakeW {io :: IO SnowflakeGen}
+type SnowflakeW = IO SnowflakeGen
 
 instance FromJSON SnowflakeW where
-  parseJSON = withObject "SnowflakeGen" $ \o -> fmap SnowflakeW $ newSnowflakeGen
+  parseJSON = withObject "SnowflakeGen" $ \o -> newSnowflakeGen
     <$> o .: "config"
     <*> o .: "node"
 
